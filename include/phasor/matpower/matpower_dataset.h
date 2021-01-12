@@ -7,39 +7,34 @@
 
 #include <Eigen/Core>
 
-namespace phasor
-{
-  class MatpowerDataset
-  {
-  public:
-    /// Load matpower dataset from string
-    MatpowerDataset(Eigen::MatrixXd data) : data_(data){};
+namespace phasor {
+class MatpowerDataset {
+ public:
+  /// Load matpower dataset from string
+  MatpowerDataset(Eigen::MatrixXd data) : data_(data) {};
 
-    /**
-     * Access variable as array.
-     * 
-     * Given a bus/branch/generator index get the associated values of the
-     * system. This method provides a direct access to the network's power
-     * information, such as access the matpower bus information for all buses,
-     */
-    Eigen::VectorXd operator[](const size_t index) const
-    {
-      return getRow(index);
-    }
+  /**
+   * Access variable as array.
+   *
+   * Given a bus/branch/generator index get the associated values of the
+   * system. This method provides a direct access to the network's power
+   * information, such as access the matpower bus information for all buses,
+   */
+  const Eigen::VectorXd operator[](const size_t index) const {
+    return getRow(index);
+  }
 
-    Eigen::VectorXd getRow(const size_t index) const
-    {
-      return data_.row(index);
-    }
+  [[nodiscard]] const Eigen::VectorXd getRow(const size_t index) const {
+    return data_.row(index);
+  }
 
-    Eigen::VectorXd getCol(const size_t index) const
-    {
-      return data_.col(index);
-    }
+  [[nodiscard]] const Eigen::VectorXd getCol(const size_t index) const {
+    return data_.col(index);
+  }
 
-  private:
-    Eigen::MatrixXd data_;
-  };
+ private:
+  Eigen::MatrixXd data_;
+};
 } // namespace phasor
 
 #endif // PHASOR_INCLUDE_PARSER_MATPOWER_MATPOWER_DATASET_H__

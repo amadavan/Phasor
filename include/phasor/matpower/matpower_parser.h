@@ -6,126 +6,104 @@
 #include <iostream>
 
 #include <Eigen/Core>
+#include <utility>
 
-#include "phasor/power/power_network.h"
 #include "phasor/matpower/network.h"
 
-namespace phasor::matpower
-{
-  Network parseFile(const std::string &mfile);
-  Eigen::MatrixXd getMatrixFromText(std::ifstream &input);
+namespace phasor::matpower {
+class Parser {
+ public:
+  explicit Parser(std::string filename) : filename_(std::move(filename)) {}
 
-  class Parser
-  {
-  public:
-    Parser(const std::string &filename) : filename_(filename) {}
+  Network parseMatpower() {
 
-    Network parseMatpower()
-    {
+    if (!std::filesystem::exists(filename_))
+      throw std::invalid_argument("File does not exist.");
 
-      if (!std::filesystem::exists(mfile))
-        throw std::invalid_argument("File does not exist.");
+    int version = 2;
+    double baseMVA;
+    Eigen::MatrixXd branch, bus, gen, gencost;
 
-      int version = 2;
-      double baseMVA;
-      Eigen::MatrixXd branch, bus, gen, gencost;
+    std::ifstream ifile(filename_);
 
-      std::ifstream ifile(mfile);
+    std::string line;
+    while (std::getline(ifile, line)) {
+      if (line[0] == '%')
+        continue;
 
-      std::string line;
-      while (std::getline(ifile, line))
-      {
-        if (line[0] == '%')
-          continue;
+      std::istringstream iss(line);
+      std::string header;
+      std::getline(iss, header, ' ');
 
-        std::istringstream iss(line);
-        std::string header;
-        std::getline(iss, header, ' ');
+      if (header.compare(0, 3, "mpc") == 0) {
+        header = header.substr(4);
 
-        if (header.compare(0, 3, "mpc") == 0)
-        {
-          header = header.substr(4);
+        std::string value;
 
-          std::string value;
+        if (header == "version") {
+          std::getline(iss, value, '=');
+          iss.ignore(2);
 
-          if (header.compare("version") == 0)
-          {
-            std::getline(iss, value, '=');
-            iss.ignore(2);
+          iss >> version;
+        } else if (header == "baseMVA") {
+          std::getline(iss, value, '=');
+          iss.ignore(1);
+          std::getline(iss, value, ';');
 
-            iss >> version;
-          }
-          else if (header.compare("baseMVA") == 0)
-          {
-            std::getline(iss, value, '=');
-            iss.ignore(1);
-            std::getline(iss, value, ';');
-
-            baseMVA = std::stod(value);
-          }
-          else if (header.compare("bus") == 0)
-          {
-            bus = getMatrixFromText(ifile);
-          }
-          else if (header.compare("branch") == 0)
-          {
-            branch = getMatrixFromText(ifile);
-          }
-          else if (header.compare("gen") == 0)
-          {
-            gen = getMatrixFromText(ifile);
-          }
-          else if (header.compare("gencost") == 0)
-          {
-            gencost = getMatrixFromText(ifile);
-          }
+          baseMVA = std::stod(value);
+        } else if (header == "bus") {
+          bus = getMatrixFromText(ifile);
+        } else if (header == "branch") {
+          branch = getMatrixFromText(ifile);
+        } else if (header == "gen") {
+          gen = getMatrixFromText(ifile);
+        } else if (header == "gencost") {
+          gencost = getMatrixFromText(ifile);
         }
       }
-
-      return {
-          bus,
-          branch,
-          gen,
-          gencost,
-          version,
-          baseMVA};
     }
 
-  private:
-    const std::string filename_;
+    return {
+        branch,
+        bus,
+        gen,
+        gencost,
+        version,
+        baseMVA};
+  }
 
-    Eigen::MatrixXd getMatrixFromText(std::ifstream &is)
-    {
-      std::string line;
-      size_t n_lines = 0;
+ private:
+  const std::string filename_;
 
-      std::vector<std::vector<double>> data;
+  static Eigen::MatrixXd getMatrixFromText(std::ifstream &is) {
+    std::string line;
+    size_t n_lines = 0;
 
-      double datum;
+    std::vector<std::vector<double>> data;
 
-      while (std::getline(input, line))
-      {
-        if (line[0] == ']')
-          break;
+    double datum;
 
-        std::stringstream ss(line);
-        std::vector<double> row;
+    while (std::getline(is, line)) {
+      if (line[0] == ']')
+        break;
 
-        while (ss >> datum)
-          row.push_back(datum);
+      std::stringstream ss(line);
+      std::vector<double> row;
 
-        data.push_back(row);
-      }
+      while (ss >> datum)
+        row.push_back(datum);
 
-      Eigen::MatrixXd mat(data.size(), data[0].size());
-      for (size_t i = 0; i < data[0].size(); ++i)
-      {
-        for (size_t j = 0; j < data.size(); ++j)
-          mat.coeffRef(j, i) = data[j][i];
-      }
-      return mat;
+      data.push_back(row);
     }
-  };
+
+    Eigen::MatrixXd mat(data.size(), data[0].size());
+    for (size_t i = 0; i < data[0].size(); ++i) {
+      for (size_t j = 0; j < data.size(); ++j)
+        mat.coeffRef(j, i) = data[j][i];
+    }
+    return mat;
+  }
+};
 
 } // namespace phasor::matpower
 

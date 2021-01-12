@@ -9,8 +9,7 @@
 #include "gen.h"
 #include "gencost.h"
 
-namespace phasor::matpower
-{
+namespace phasor::matpower {
 
   struct Network
   {
