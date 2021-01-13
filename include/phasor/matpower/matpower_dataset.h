@@ -6,12 +6,13 @@
 #define PHASOR_INCLUDE_PARSER_MATPOWER_MATPOWER_DATASET_H__
 
 #include <Eigen/Core>
+#include <utility>
 
-namespace phasor {
+namespace phasor::matpower {
 class MatpowerDataset {
  public:
   /// Load matpower dataset from string
-  MatpowerDataset(Eigen::MatrixXd data) : data_(data) {};
+  MatpowerDataset(Eigen::MatrixXd data) : data_(std::move(data)) {};
 
   /**
    * Access variable as array.
@@ -20,20 +21,22 @@ class MatpowerDataset {
    * system. This method provides a direct access to the network's power
    * information, such as access the matpower bus information for all buses,
    */
-  const Eigen::VectorXd operator[](const size_t index) const {
+  Eigen::VectorXd operator[](const size_t index) const {
     return getRow(index);
   }
 
-  [[nodiscard]] const Eigen::VectorXd getRow(const size_t index) const {
+  [[nodiscard]] Eigen::VectorXd getRow(const size_t index) const {
     return data_.row(index);
   }
 
-  [[nodiscard]] const Eigen::VectorXd getCol(const size_t index) const {
+  [[nodiscard]] Eigen::VectorXd getCol(const size_t index) const {
     return data_.col(index);
   }
 
  private:
   Eigen::MatrixXd data_;
+
+  friend struct Network;
 };
 } // namespace phasor
 

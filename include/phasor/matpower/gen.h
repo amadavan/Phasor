@@ -6,7 +6,7 @@
 #include "matpower_dataset.h"
 #include "matpower_index.h"
 
-namespace phasor {
+namespace phasor::matpower {
 class GeneratorData : public MatpowerDataset {
  public:
   GeneratorData(Eigen::MatrixXd data) : MatpowerDataset(std::move(data)) {}
