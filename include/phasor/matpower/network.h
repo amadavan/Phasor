@@ -127,7 +127,20 @@ struct Network {
     bus_order_ = BusOrder::External;
   }
 
-  Eigen::MatrixXd makeISF() const {
+  /**
+   * Create the Bbus and Bf matrices for DC opf.
+   *
+   * Emulates the makeBDC function from MATLAB. Crucially, this assumes that Pbusinj and Pfinj are negligible. This
+   * constructs matrices Bbus and Bf, such that:
+   * Pbus = Bbus * theta,
+   * Pf = Bf * theta,
+   * where Pbus and Pf correspond to nodal power injections and line flows, respectively.
+   *
+   * todo: Reevaluate the Pbusinj = Pfinj = 0 assumption.
+   *
+   * @return A tuple containing the factors for nodal power injections and line flows.
+   */
+  [[nodiscard]] std::tuple<Eigen::SparseMatrix<double>, Eigen::SparseMatrix<double>> makeBDC() const {
     if (!isInternalOrder())
       throw std::runtime_error("Buses need to be ordered consecutively. Please call toInternalOrder before makeISF.");
 
@@ -190,6 +203,23 @@ struct Network {
 
     Eigen::SparseMatrix<double> Bbus = Cft.transpose() * Bf;
 
+    return std::make_tuple(Bbus, Bf);
+  }
+
+  [[nodiscard]] Eigen::MatrixXd makeISF() const {
+    if (!isInternalOrder())
+      throw std::runtime_error("Buses need to be ordered consecutively. Please call toInternalOrder before makeISF.");
+
+    // Set line status
+    Eigen::VectorXd status = branch[BranchIndex::BR_STATUS];
+
+    // Useful system properties
+    size_t n_l_all = branch.getCol(0).size();
+    size_t n_l = (status.array() > 0).count();
+    size_t n_b = bus.getCol(0).size();
+
+    auto[Bbus, Bf] = makeBDC();
+
     // Assume Pfinj = Pbusinj = 0
     // todo: reevaluate this assumption.
 
@@ -199,19 +229,38 @@ struct Network {
     for (size_t i = 0; i < n_b; ++i) if (bus[BusIndex::BUS_TYPE][i] == 3) reference_index = i;
 
     Eigen::SparseMatrix<double> Bf_ref(n_l, n_b - 1);
-    Bf_ref.leftCols(reference_index) = Bf.leftCols(reference_index);
-    Bf_ref.rightCols(n_b - reference_index - 1) = Bf.rightCols(n_b - reference_index - 1);
+    Bf_ref.reserve(Bf.nonZeros());
+    for (size_t i = 0; i < n_b - 1; ++i) {
+      Bf_ref.startVec(i);
+      if (i < reference_index)
+        for (Eigen::SparseMatrix<double>::InnerIterator it(Bf, i); it; ++it)
+          Bf_ref.insertBack(it.row(), i) = it.value();
+      else
+        for (Eigen::SparseMatrix<double>::InnerIterator it(Bf, i + 1); it; ++it)
+          Bf_ref.insertBack(it.row(), i) = it.value();
+    }
+    Bf_ref.finalize();
 
     Eigen::SparseMatrix<double> Bbus_ref(n_b, n_b - 1);
-    Bbus_ref.leftCols(reference_index) = Bbus.leftCols(reference_index);
-    Bbus_ref.rightCols(n_b - reference_index - 1) = Bbus.rightCols(n_b - reference_index - 1);
+    Bbus_ref.reserve(Bbus.nonZeros());
+    for (size_t i = 0; i < n_b - 1; ++i) {
+      Bbus_ref.startVec(i);
+      if (i < reference_index)
+        for (Eigen::SparseMatrix<double>::InnerIterator it(Bbus, i); it; ++it)
+          Bbus_ref.insertBack(it.row(), i) = it.value();
+      else
+        for (Eigen::SparseMatrix<double>::InnerIterator it(Bbus, i + 1); it; ++it)
+          Bbus_ref.insertBack(it.row(), i) = it.value();
+    }
+    Bbus_ref.finalize();
 
     Eigen::SparseMatrix<double> BbusTBbus = Bbus_ref.transpose() * Bbus_ref;
-    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> ldl_solver(BbusTBbus);
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> Bbus_solver;
+    Bbus_solver.compute(BbusTBbus);
 
     Eigen::SparseMatrix<double> Bbus_ref_transpose = Bbus_ref.transpose();
 
-    return Bf_ref * ldl_solver.solve(Bbus_ref_transpose);
+    return Bf_ref * Bbus_solver.solve(Bbus_ref_transpose);
   }
 
  private:
