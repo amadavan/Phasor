@@ -65,7 +65,7 @@ struct Network {
     Eigen::VectorXd branch_tbus = branch[BranchIndex::T_BUS];
     Eigen::VectorXd gen_index = gen[GenIndex::GEN_BUS];
 
-    for (size_t i = 1; i <= n_b; ++i) {
+    for (size_t i = 0; i < n_b; ++i) {
       int internal_index = i + 1;
       int external_index = external_order_[i];
       if (external_index != i) {
