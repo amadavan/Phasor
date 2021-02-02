@@ -5,6 +5,9 @@
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 #include <Eigen/SparseCholesky>
+#ifdef ENABLE_SUITESPARSE
+#include <Eigen/CholmodSupport>
+#endif
 #include <utility>
 
 #include "branch.h"
@@ -255,8 +258,16 @@ struct Network {
     Bbus_ref.finalize();
 
     Eigen::SparseMatrix<double> BbusTBbus = Bbus_ref.transpose() * Bbus_ref;
+#ifdef ENABLE_SUITESPARSE
+    Eigen::CholmodSupernodalLLT<Eigen::SparseMatrix<double>> Bbus_solver;
+#else
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> Bbus_solver;
+#endif
     Bbus_solver.compute(BbusTBbus);
+
+    if (Bbus_solver.info() != Eigen::Success) {
+      std::cout << "phasor::Network::makeBDC failed. Unable to compute the ISF matrix.";
+    }
 
     Eigen::SparseMatrix<double> Bbus_ref_transpose = Bbus_ref.transpose();
 
