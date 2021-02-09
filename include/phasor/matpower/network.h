@@ -27,6 +27,8 @@ struct Network {
   int version = 2;
   double baseMVA = 100.0;
 
+  size_t reference_bus;
+
   Network(BranchData _branch,
           BusData _bus,
           GeneratorData _gen,
@@ -38,7 +40,53 @@ struct Network {
         gen(std::move(_gen)),
         gencost(std::move(_gencost)),
         version(_version),
-        baseMVA(_baseMVA) {}
+        baseMVA(_baseMVA) {
+    // Determine reference bus (0 if none specified)
+    reference_bus = 0;
+
+    size_t n_b = bus.getCol(0).size();
+    for (size_t i = 0; i < n_b; ++i) if (bus[BusIndex::BUS_TYPE][i] == 3) reference_bus = i;
+  }
+
+  bool isPerUnit() const {
+    return per_unit_;
+  }
+
+  void setPerUnit(bool to_per_unit) {
+    if (to_per_unit == per_unit_) return;
+
+    double multiplier = (to_per_unit) ? 1/baseMVA : baseMVA;
+
+    bus.data_.col(static_cast<size_t>(BusIndex::PD)).array() *= multiplier;
+    bus.data_.col(static_cast<size_t>(BusIndex::QD)).array() *= multiplier;
+    bus.data_.col(static_cast<size_t>(BusIndex::GS)).array() *= multiplier;
+    bus.data_.col(static_cast<size_t>(BusIndex::BS)).array() *= multiplier;
+
+    gen.data_.col(static_cast<size_t>(GenIndex::PG)).array() *= multiplier;
+    gen.data_.col(static_cast<size_t>(GenIndex::QG)).array() *= multiplier;
+    gen.data_.col(static_cast<size_t>(GenIndex::QMAX)).array() *= multiplier;
+    gen.data_.col(static_cast<size_t>(GenIndex::QMIN)).array() *= multiplier;
+    gen.data_.col(static_cast<size_t>(GenIndex::PMAX)).array() *= multiplier;
+    gen.data_.col(static_cast<size_t>(GenIndex::PMIN)).array() *= multiplier;
+    if (gen.data_.cols() > 10) { // Skip columns that aren't included for GOC instances
+      gen.data_.col(static_cast<size_t>(GenIndex::PC1)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::PC2)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::QC1MIN)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::QC1MAX)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::QC2MIN)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::QC2MAX)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::RAMP_AGC)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::RAMP_10)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::RAMP_30)).array() *= multiplier;
+      gen.data_.col(static_cast<size_t>(GenIndex::RAMP_Q)).array() *= multiplier;
+    }
+
+    branch.data_.col(static_cast<size_t>(BranchIndex::RATE_A)).array() *= multiplier;
+    branch.data_.col(static_cast<size_t>(BranchIndex::RATE_B)).array() *= multiplier;
+    branch.data_.col(static_cast<size_t>(BranchIndex::RATE_C)).array() *= multiplier;
+
+    // TODO: update generator cost
+  }
 
   [[nodiscard]] bool isInternalOrder() const {
     Eigen::VectorXd current_order = bus[BusIndex::BUS_I];
@@ -106,8 +154,8 @@ struct Network {
     Eigen::VectorXd gen_index = gen[GenIndex::GEN_BUS];
 
     for (size_t i = 0; i < n_b; ++i) {
-      int internal_index = i + 1;
-      int external_index = external_order_[i];
+      size_t internal_index = i + 1;
+      size_t external_index = external_order_[i];
       if (external_index != i) {
         // Update from/to bus indices for branches
         for (size_t j = 0; j < n_l_all; ++j) {
@@ -227,15 +275,11 @@ struct Network {
     // todo: reevaluate this assumption.
 
     // Construct ISF
-    // Determine reference bus (0 if none specified)
-    size_t reference_index = 0;
-    for (size_t i = 0; i < n_b; ++i) if (bus[BusIndex::BUS_TYPE][i] == 3) reference_index = i;
-
     Eigen::SparseMatrix<double> Bf_ref(n_l, n_b - 1);
     Bf_ref.reserve(Bf.nonZeros());
     for (size_t i = 0; i < n_b - 1; ++i) {
       Bf_ref.startVec(i);
-      if (i < reference_index)
+      if (i < reference_bus)
         for (Eigen::SparseMatrix<double>::InnerIterator it(Bf, i); it; ++it)
           Bf_ref.insertBack(it.row(), i) = it.value();
       else
@@ -248,7 +292,7 @@ struct Network {
     Bbus_ref.reserve(Bbus.nonZeros());
     for (size_t i = 0; i < n_b - 1; ++i) {
       Bbus_ref.startVec(i);
-      if (i < reference_index)
+      if (i < reference_bus)
         for (Eigen::SparseMatrix<double>::InnerIterator it(Bbus, i); it; ++it)
           Bbus_ref.insertBack(it.row(), i) = it.value();
       else
@@ -282,6 +326,8 @@ struct Network {
 
   BusOrder bus_order_ = BusOrder::External;
   Eigen::VectorXd external_order_;
+
+  bool per_unit_ = false;
 };
 
 } // namespace phasor
