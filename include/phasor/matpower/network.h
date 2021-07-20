@@ -55,7 +55,7 @@ struct Network {
   void setPerUnit(bool to_per_unit) {
     if (to_per_unit == per_unit_) return;
 
-    double multiplier = (to_per_unit) ? 1/baseMVA : baseMVA;
+    double multiplier = (to_per_unit) ? 1 / baseMVA : baseMVA;
 
     bus.data_.col(static_cast<size_t>(BusIndex::PD)).array() *= multiplier;
     bus.data_.col(static_cast<size_t>(BusIndex::QD)).array() *= multiplier;
@@ -208,7 +208,8 @@ struct Network {
     size_t index = 0;
     for (size_t i = 0; i < n_l_all; ++i)
       if (status[i] > 0)
-        br_x[index++] = branch[BranchIndex::BR_X][i];
+        br_x[index++] = (pow(branch[BranchIndex::BR_X][i], 2) + pow(branch[BranchIndex::BR_R][i], 2))
+            / branch[BranchIndex::BR_X][i];
 
     // Set tap ratio
     Eigen::VectorXd tap(n_l);
@@ -217,9 +218,10 @@ struct Network {
       if (status[i] > 0)
         tap[index++] = branch[BranchIndex::TAP][i];
     for (double &val : tap) if (val == 0) val = 1;
+    tap.setOnes();
 
     // Scale susceptance by tap ratio
-    Eigen::VectorXd b = 1 / br_x.array() / tap.array();
+    Eigen::VectorXd b = 1. / br_x.array() / tap.array();
 
     // Construct connection matrix Cft = Cf - Ct for line and from - to buses
     Eigen::VectorXd f_bus(n_l);
@@ -243,7 +245,7 @@ struct Network {
     Eigen::SparseMatrix<double> Bf(n_l, n_b);
     Bf.setFromTriplets(tripletList.begin(), tripletList.end());
 
-    // Create Bbus matrix (graph incidence matrix)
+    // Create Bbus matrix (from graph incidence matrix)
     tripletList.clear();
     for (size_t i = 0; i < n_l; ++i) {
       tripletList.emplace_back(i, f_bus[i], 1);
@@ -257,7 +259,7 @@ struct Network {
     return std::make_tuple(Bbus, Bf);
   }
 
-  [[nodiscard]] Eigen::MatrixXd makeISF() const {
+  [[nodiscard]] Eigen::MatrixXd makeISF() {
     if (!isInternalOrder())
       throw std::runtime_error("Buses need to be ordered consecutively. Please call toInternalOrder before makeISF.");
 
@@ -310,12 +312,30 @@ struct Network {
     Bbus_solver.compute(BbusTBbus);
 
     if (Bbus_solver.info() != Eigen::Success) {
+      isf_success_ = false;
       std::cout << "phasor::Network::makeBDC failed. Unable to compute the ISF matrix.";
+    } else {
+      isf_success_ = true;
     }
 
     Eigen::SparseMatrix<double> Bbus_ref_transpose = Bbus_ref.transpose();
 
     return Bf_ref * Bbus_solver.solve(Bbus_ref_transpose);
+  }
+
+  bool ISFcomputed() {
+    return isf_success_;
+  }
+
+  bool setLineStatus(size_t line_number, bool status) {
+    bool ret = false;
+    try {
+      branch.data_.coeffRef(line_number, static_cast<size_t>(BranchIndex::BR_STATUS)) = (status) ? 1 : 0;
+      ret = true;
+    } catch (const std::exception &e) {
+      std::cerr << "Warning: exception caught while setting line status" << std::endl;
+    }
+    return ret;
   }
 
  private:
@@ -328,6 +348,7 @@ struct Network {
   Eigen::VectorXd external_order_;
 
   bool per_unit_ = false;
+  bool isf_success_ = true;
 };
 
 } // namespace phasor
