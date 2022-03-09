@@ -1,7 +1,6 @@
 #ifndef PHASOR_INCLUDE_PARSER_MATPOWER_MATPOWER_PARSER_H__
 #define PHASOR_INCLUDE_PARSER_MATPOWER_MATPOWER_PARSER_H__
 
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -16,9 +15,6 @@ class Parser {
   explicit Parser(std::string filename) : filename_(std::move(filename)) {}
 
   Network parseMatpower() {
-
-    if (!std::filesystem::exists(filename_))
-      throw std::invalid_argument("File does not exist.");
 
     int version = 2;
     double baseMVA;
